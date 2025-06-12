@@ -10,7 +10,24 @@ library(Gviz)
 library(ggplot2)
 library(RColorBrewer)
 library(edgeR)
-########################
+########################Retrieve beta values from TCGA
+query_met <- GDCquery(project= "TCGA-COAD", 
+                      data.category = "DNA Methylation", data.type = "Methylation Beta Value",
+                      platform = c("Illumina Human Methylation 250"),sample.type = "Primary Tumor")
+GDCdownload(query_met)
+
+#####################3
+query_met2 <- GDCquery(project= "TCGA-COAD", 
+                      data.category = "DNA Methylation", data.type = "Methylation Beta Value",
+                      platform = c("Illumina Human Methylation 27"),sample.type = "Primary Tumor")
+###########################
+data.met2 <- GDCprepare(query_met2)
+data.met <- GDCprepare(query_met)
+################################
+met <- as.data.frame(SummarizedExperiment::assay(data.met))
+######################
+met2 <- as.data.frame(SummarizedExperiment::assay(data.met2))
+#######################Filtered betavlues of WT and 175H mutated cohorts
 data <- read.csv("Bvalue_R175H.csv")
 data_WT <- read.csv("Bvalue_WTR175H.csv")
 met <- cbind(data_WT2,data)
