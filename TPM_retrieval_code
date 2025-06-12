@@ -1,0 +1,18 @@
+
+library(TCGAbiolinks)
+library(SummarizedExperiment)
+WT <- read.csv("p53WT_Barcodes.csv")
+TP_barcode <- data$Barcodes
+q1 <- TCGAquery_SampleTypes(TP_barcode,"TP") 
+TP_query <- GDCquery(
+  project = c("TCGA-COAD"),
+  data.category = "Transcriptome Profiling",
+  data.type = "Gene Expression Quantification", 
+  workflow.type = "STAR - Counts",
+  barcode=TP_barcode)
+GDCdownload(TP_query) 
+data <- GDCprepare(TP_query)
+TPM_WT <- assay(data,4) %>% data.frame()
+head(TPM_WT)
+dim(TPM_WT)
+write.csv(TPM_WT,"TPM_counts_WT.csv")
