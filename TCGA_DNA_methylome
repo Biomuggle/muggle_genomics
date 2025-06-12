@@ -1,0 +1,207 @@
+####################################
+library(TCGAbiolinks)
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+library(IlluminaHumanMethylation450kmanifest)
+library(minfi)
+library(limma)
+library(missMethyl)
+library(DMRcate)
+library(Gviz)
+library(ggplot2)
+library(RColorBrewer)
+library(edgeR)
+########################
+data <- read.csv("Bvalue_R175H.csv")
+data_WT <- read.csv("Bvalue_WTR175H.csv")
+met <- cbind(data_WT2,data)
+head(met)
+probe.na <- rowSums(is.na(met))
+table(probe.na == 0)
+probe <- probe.na[probe.na == 0]
+met <- met[row.names(met) %in% names(probe), ]
+dim(met)
+head(met)
+########
+ann450k <- getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+## remove probes that match chromosomes  X and Y 
+keep <- !(row.names(met) %in% ann450k$Name[ann450k$chr %in% c("chrX","chrY")])
+table(keep)
+met <- met[keep, ]
+rm(keep) # remove no further needed probes.
+dim(met)
+dim(met)
+########################333
+## remove SNPs overlapped probe
+table(is.na(ann450k$Probe_rs))
+# probes without snp
+no.snp.probe <- ann450k$Name[is.na(ann450k$Probe_rs)]
+snp.probe <- ann450k[!is.na(ann450k$Probe_rs), ]
+#snps with maf <= 0.05
+snp5.probe <- snp.probe$Name[snp.probe$Probe_maf <= 0.05]
+#############################3
+# filtre met
+met <- met[row.names(met) %in% c(no.snp.probe, snp5.probe), ]
+dim(met)
+#remove no-further needed dataset
+rm(no.snp.probe, probe, probe.na, snp.probe, snp5.probe)
+###############################
+#####################
+head(met)
+dim(met)
+met$X <- NULL
+##########################
+mval <- t(apply(met, 1, function(x) log2(x/(1-x))))
+###################
+write.csv(mval,"p53WTandp53175H_32_mvalues.csv")
+mval <- read.csv("p53WTandp53175H_32_mvalues.csv")
+head(mval)
+rownames(mval)<- mval$X
+head(mval)
+mval$X <-NULL
+head(mval)
+##############
+group<-as.factor(c(rep("WT", 16), rep("R175H", 16)))
+group<- relevel(group, ref = "WT")
+design <- model.matrix(~group)
+design
+fit <- lmFit(mval, design)
+fit2 <- eBayes(fit)
+#dim(deff.meth)
+#head(deff.meth)
+ann450kSub <- ann450k[match(rownames(mval),ann450k$Name),
+                      c(1:4,12:19,24:ncol(ann450k))]
+DMPs <- topTable(fit2, num=Inf, coef=ncol(design),sort.by="p", genelist=ann450kSub)
+head(DMPs)
+dim(DMPs)
+plotCpg(met, cpg="cg15443301", pheno=group, ylab = "Beta values")
+#######################
+#deff.meth = topTable(fit2, coef=ncol(design), sort.by="p",number = nrow(mval), adjust.method = "BY")
+write.csv(DMPs,"Differentially_Methylated_cpgs_probewiseanalysis_p53WTVsp53R175H.csv")
+#############
+#############
+# Setting some annotation
+###########################
+# fdr in betafit are not used, we only extract the beta-fold-change for each CpG
+#betafit <- lmFit(ilogit2(mval), design)
+#betafit <- contrasts.fit(betafit, group)
+#betafit <- eBayes(betafit)
+#betatt <- topTable(betafit, coef = "Case - Control", number = nrow(M))
+# use fdr calculated from M-values and betafc calculated from beta-value
+#m <- match(rownames(tt), rownames(betatt))
+#tt$betafc <- betatt$logFC[m]
+#m <- match(rownames(M), rownames(tt))
+#tt <- tt[m, ]
+#myannotation <- cpg.annotate("array", arraytype = "450K", mval, analysis.type="differential",
+                             design=design,coef=2,what = "M",fdr = 0.05)
+
+#str(myannotation)
+
+# DMR analysis
+DMRs <- dmrcate(myannotation, lambda=1000, C=2)
+results.ranges <- extractRanges(DMRs)
+results.ranges
+##########Mean Beta methylation value
+
+table(data.frame(ann450k)$Regulatory_Feature_Group) ## to find regulatory features of probes
+
+# selecting a subset of probes associated with the promoter
+promoter.probe <- rownames(data.frame(ann450k))[data.frame(ann450k)$Regulatory_Feature_Group 
+                                                %in% c("Promoter_Associated", "Promoter_Associated_Cell_type_specific")]
+################################################3
+head(met)
+dim(met)
+WT <- met[,1:16]
+dim(WT)
+MUT <- met[,17:32]
+dim(MUT)
+head(WT)
+################
+#######################
+dbet <- data.frame (p53WT = rowMeans(WT),
+                    MUT = rowMeans(MUT))
+head(dbet)
+dbet$delta <- (dbet$MUT - dbet$p53WT)
+head(dbet)
+dim(dbet)
+head(DMPs)
+final_DMPs <- merge(dbet,DMPs,by.x=0,by.y=0)
+dim(final_DMPs)
+head(final_DMPs)
+write.csv(final_DMPs,"Total_DMPS_R175Hwithdeltavaluesandpvalue.csv")
+promoter.probe <- rownames(data.frame(ann450k))[data.frame(ann450k)$Regulatory_Feature_Group 
+                                                %in% c("Promoter_Associated", "Promoter_Associated_Cell_type_specific")]
+
+
+db.probe <- rownames(dbet) 
+head(db.probe)
+db.probe <- db.probe %in% promoter.probe # those resided in promoter
+head(db.probe)
+tail(db.probe)
+db.probe
+# those genes flanked to promote probe
+db.genes <- data.frame(ann450k)[rownames(data.frame(ann450k)) %in% db.probe, ]
+head(db.genes)
+db.genes <- db.genes[, c("Name","UCSC_RefGene_Name")]
+db.genes <- tidyr::separate_rows(db.genes, Name, UCSC_RefGene_Name) # extending collapsed cells
+db.genes$comb <- paste(db.genes$Name,db.genes$UCSC_RefGene_Name) # remove duplicates
+db.genes <- db.genes[!duplicated(db.genes$comb), ]
+db.genes <- db.genes[, -3]
+head(db.genes)
+db.genes
+##################
+head(final_DMPs)
+head(final_DMPs)
+#########################plots
+pval <- final_DMPs[final_DMPs$P.Value<=0.05,]
+nrow(pval)
+write.csv(pval,"DMC_pvalue_0.05.csv")
+data <- read.csv("DMC_pvalue_0.05_densityplot.csv")
+head(data)
+library(ggplot2)
+library(ggpubr)
+ggplot(data, aes(x=b.values, color=p53status)) +scale_color_manual(values=c( "gray12","firebrick"))+scale_size_manual(values = c(4, 4))+
+  geom_density(lwd = 1)+theme_bw(base_size = 14)+theme(axis.text = element_text(face="bold",color="black"))
+head(data)
+library(ggplot2)
+library(ggpubr)
+p <- ggplot(data, aes(x = reorder(p53status,-bvalues), y = bvalues, fill = p53status))+stat_boxplot(geom="errorbar")+
+  geom_boxplot(width = 0.4,  outlier.shape = NA) +scale_fill_manual(values=c("#999999","#d73027"))+
+  labs(title = "DNAmethylation profile",
+       x = "p53 Status",
+       y = "beta values") +
+  theme_bw(base_size = 14)+theme(axis.text = element_text(face="bold",color="black"))
+p+     # Add global p-value
+  stat_compare_means(label = "p.signif",colour = "black", # label
+                     label.y=1.2,label.size = 25, # label
+                     fontface = "bold", # label
+                     fontfamily = "TimesNewRoman", # label
+                     bracket.colour = "black", # bracket
+                     bracket.size = 1.0, # bracket
+                     lineend = "round")
+##########################
+pval <- final_DMPs[final_DMPs$P.Value<=0.05,]
+dim(pval)
+write.csv(pval,"DMPs_pval_0.05.csv")
+########################
+pval$absdelta <-  abs(pval$MUT - pval$p53WT)
+hyper3 <- pval[pval$delta>=0.1,]
+nrow(hyper3)
+hypo2 <- pval[pval$delta<=-0.1,]
+nrow(hypo2)
+final <- rbind(hypo2,hyper3)
+dim(final)
+write.csv(final,"Total_final_Hyper_hypo_methyalted_regions_p53mut.csv")
+head(DMPs)
+write.csv(hypo2,"Hypomethylated_Regions_absolutedelta.csv")
+write.csv(hyper3,"Hypermethylated_absolutedelta.csv")
+dim(DMPs)
+promoter_hypo <- hypo2[hypo2$Regulatory_Feature_Group=="Promoter_Associated",]
+promoter_hypo2 <- hypo2[hypo2$Regulatory_Feature_Group=="Promoter_Associated_Cell_type_specific",]
+promoter_finalhypo <- rbind(promoter_hypo,promoter_hypo2)
+nrow(promoter_finalhypo)
+write.csv(promoter_finalhypo,"Hypomethylayed_promoter_regions.csv")
+#########################
+
+
+
+
