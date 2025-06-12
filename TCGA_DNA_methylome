@@ -152,18 +152,11 @@ db.genes
 head(final_DMPs)
 head(final_DMPs)
 #########################plots
+library(ggplot2)
+library(ggpubr)
 pval <- final_DMPs[final_DMPs$P.Value<=0.05,]
-nrow(pval)
 write.csv(pval,"DMC_pvalue_0.05.csv")
 data <- read.csv("DMC_pvalue_0.05_densityplot.csv")
-head(data)
-library(ggplot2)
-library(ggpubr)
-ggplot(data, aes(x=b.values, color=p53status)) +scale_color_manual(values=c( "gray12","firebrick"))+scale_size_manual(values = c(4, 4))+
-  geom_density(lwd = 1)+theme_bw(base_size = 14)+theme(axis.text = element_text(face="bold",color="black"))
-head(data)
-library(ggplot2)
-library(ggpubr)
 p <- ggplot(data, aes(x = reorder(p53status,-bvalues), y = bvalues, fill = p53status))+stat_boxplot(geom="errorbar")+
   geom_boxplot(width = 0.4,  outlier.shape = NA) +scale_fill_manual(values=c("#999999","#d73027"))+
   labs(title = "DNAmethylation profile",
