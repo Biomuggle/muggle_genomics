@@ -2,8 +2,9 @@
 library(readxl)
 library(matlabr)
 library(data.table)
-
-
+#####
+# 1st Method: 76GS
+####################
 ######################################################
 data <- read.csv("TPM_counts_WT_R273H_after_filter.csv")
 head(data)
