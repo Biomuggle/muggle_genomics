@@ -1,1 +1,116 @@
+################76GS
+library(readxl)
+library(matlabr)
+library(data.table)
+
+
+######################################################
+data <- read.csv("TPM_counts_WT_R273H_after_filter.csv")
+head(data)
+rownames(data)<- data$X
+data$X <- NULL
+log2Exp <- log2(data+1)
+head(log2Exp)
+################## Step 1: Clean expression matrix
+remIdx = which(apply(log2Exp, 1, function(x) any(x == NaN | x == -Inf)) == TRUE)
+if(length(remIdx) > 0) log2Exp = log2Exp[-remIdx, ]
+log2Exp[is.na(log2Exp)] = 0
+nrow(log2Exp)
+# Step 2: Extract gene names and numeric matrix
+sampleNum = ncol(log2Exp)
+genes = rownames(log2Exp)
+exp = apply(log2Exp, 2, as.numeric)
+head(genes)
+# Step 3: Load EMT 76GS gene signature
+EMTSignature = data.frame(read_excel("EMT_signature_76GS.xlsx", col_names = TRUE))
+EMTIdx = match(unique(na.omit(EMTSignature[,2])), genes)
+geneFound = length(na.omit(EMTIdx))
+cat(paste(geneFound, "gene's expression values found \n", sep = " "))
+head(EMTSignature)
+# Step 4: Add small random noise to expression values
+sdVal = rnorm(ncol(exp), mean = 0, sd = 0.01)
+EMTMat = t(apply(exp[na.omit(EMTIdx),], 1, function(x) x + sdVal))
+row.names(EMTMat) = genes[na.omit(EMTIdx)]
+EMTMat
+# Step 5: Calculate EMT score
+ecadhExp = grep("^CDH1$", row.names(EMTMat))
+if(length(ecadhExp) == 0){
+  cat("CDH1 gene not found - 76GS EMT score cannot be calculated\n") 
+  EMTScoreStd = rep(0, ncol(exp))
+} else {
+  ecadhExpVal = EMTMat[ecadhExp, ]
+  weightVal = apply(EMTMat, 1, function(x) cor(x, ecadhExpVal))
+  EMTMatWt = weightVal * EMTMat
+  EMTScore = apply(EMTMatWt, 2, sum)
+  EMTScoreMean = mean(EMTScore)
+  EMTScoreStd = EMTScore - EMTScoreMean
+}
+# Step 6: Format result
+emtWrite = cbind(EMTScoreStd)
+colnames(emtWrite) = c("GS76")
+
+# Output is in the variable 'emtWrite'
+print(head(emtWrite))
+write.csv(emtWrite,"76_GS_WT_R273H_log2+1_score.csv")
+#############################
+###### Second Method KS method
+data <- read.csv("TPM_counts_WT_R282W_after_filter.csv")
+head(data)
+rownames(data)<- data$X
+data$X<- NULL
+head(data)
+expMat <- data
+genes = rownames(expMat)
+exp = apply(expMat, 2, as.numeric)
+# Load gene signature (columns: gene, category)
+EMTSignature = data.frame(read_excel("EM_gene_signature_tumor_KS.xlsx", col_names = FALSE))
+head(EMTSignature)
+commonSig = intersect(EMTSignature[,1], genes)
+EMTExpIdx = match(commonSig, genes)
+EMTExp = exp[EMTExpIdx, ]
+EMTGrpIdx = match(commonSig, EMTSignature[,1])
+geneCat = EMTSignature[EMTGrpIdx, 2]
+epiIdx = which(geneCat == "Epi")
+mesIdx = which(geneCat == "Mes")
+#####################################
+# Perform KS test per sample
+sampleScore2 = matrix(0, nrow = ncol(EMTExp), ncol = 6)
+rownames(sampleScore2) = colnames(EMTExp)
+
+for (i in 1:ncol(EMTExp)) {
+  ksTwoSided = ks.test(EMTExp[mesIdx,i], EMTExp[epiIdx,i])
+  ksResGrt = ks.test(EMTExp[mesIdx,i], EMTExp[epiIdx,i], alternative = "greater")
+  ksResLess = ks.test(EMTExp[epiIdx,i], EMTExp[mesIdx,i], alternative = "greater")
+  
+  sampleScore2[i, ] = c(
+    ksTwoSided$statistic, ksTwoSided$p.value,
+    ksResGrt$statistic, ksResGrt$p.value,
+    ksResLess$statistic, ksResLess$p.value
+  )
+}
+
+# Score logic
+finalScore = matrix(0, nrow = nrow(sampleScore2), ncol = 1)
+
+for (i in 1:nrow(sampleScore2)) {
+  if (sampleScore2[i, 4] < 0.05) {
+    finalScore[i, ] = -1 * sampleScore2[i, 3]
+  } else if (sampleScore2[i, 6] < 0.05) {
+    finalScore[i, ] = sampleScore2[i, 5]
+  } else {
+    if (sampleScore2[i, 5] == max(sampleScore2[i, c(3,5)])) {
+      finalScore[i, ] = sampleScore2[i, 5]
+    } else {
+      finalScore[i, ] = -1 * sampleScore2[i, 3]
+    }
+  }
+}
+
+# Output
+ksOut = cbind(finalScore)
+colnames(ksOut) = c("KS_score")
+rownames(ksOut) = colnames(EMTExp)
+print(head(ksOut))
+write.csv(ksOut,"KSscore_WT_R282W.csv")
+#################################################
 
