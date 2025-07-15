@@ -1,1 +1,92 @@
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(data.table)
+library(Matrix)
+# STEP 1: Load Data
+counts <- fread("GSM7058755_non_immune_counts.txt.gz", data.table = FALSE)
+meta <- fread("GSM7058755_non_immune_meta.txt.gz", data.table = FALSE)
+
+# Check structure
+head(counts[, 1:5])
+head(meta)
+
+# STEP 2: Convert counts to matrix
+rownames(counts) <- counts[,1]
+counts <- counts[,-1]
+counts_matrix <- as.matrix(counts)
+
+# Ensure rownames in metadata match column names in count matrix
+rownames(meta) <- meta$cell
+meta <- meta[colnames(counts_matrix), ]
+##3#
+dim(counts)
+object.size(counts)
+###############
+counts_sparse <- as(as.matrix(counts), "dgCMatrix")
+# STEP 3: Create Seurat Object
+seurat_obj <- CreateSeuratObject(counts = counts_sparse, meta.data = meta, project = "NonImmuneSC")
+head(seurat_obj)
+# STEP 4: Quality Control
+features <- c("nFeature_RNA", "nCount_RNA", "percent.mt")
+head(seurat_obj@meta.data)
+features[!features %in% colnames(seurat_obj@meta.data)]
+#################
+DefaultAssay(seurat_obj) <- "RNA"
+seurat_obj <- NormalizeData(seurat_obj)
+seurat_obj[["percent.mt"]] <- PercentageFeatureSet(seurat_obj, pattern = "^MT-")
+VlnPlot(seurat_obj, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+# Filter out poor-quality cells
+seurat_obj <- subset(seurat_obj, subset = nFeature_RNA > 200 & nFeature_RNA < 6000 & percent.mt < 5)
+# STEP 5: Normalization
+seurat_obj <- NormalizeData(seurat_obj)
+# STEP 6: Feature selection
+seurat_obj <- FindVariableFeatures(seurat_obj)
+# STEP 7: Scaling
+seurat_obj <- ScaleData(seurat_obj)
+#######
+tumor.combined = RunPCA(seurat_obj)
+ElbowPlot(tumor.combined, ndims = 50)
+##########################
+tumor.combined = FindNeighbors(tumor.combined, dims = 1:20)
+tumor.combined = FindClusters(tumor.combined, resolution = 0.1)
+tumor.combined = RunUMAP(tumor.combined, reduction = "pca", dims = 1:20)
+###########
+DimPlot(tumor.combined, reduction = "umap", label = TRUE)
+############################
+DefaultAssay(tumor.combined) = "RNA"
+markers <- FindAllMarkers(tumor.combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+write.csv(markers, "tumorcell_markers.csv")
+###################
+new.cluster.ids <- levels(tumor.combined)
+levels(tumor.combined)
+new.cluster.ids <- c("0" = "Tumorcell",
+                     "1" = "Fibroblast",
+                     "2" = "Tumorcell",
+                     "3" = "Fibroblast",
+                     "4" = "Fibroblast",
+                     "5" = "Endothelial",
+                     "6" = "Tumorcell",
+                     "7" = "Fibroblast",
+                     "8" = "Tumorcell")
+
+
+tumor.combined <- RenameIdents(tumor.combined, new.cluster.ids)
+########
+#####################
+Idents(tumor.combined) <- "celltype"
+###########################################
+DimPlot(tumor.combined, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
+####################
+celltype_colors <- c("Tumorcell" = "#d73027",
+                     "Fibroblast" = "#4575b4",
+                     "Endothelial" = "#66bd63")
+
+DimPlot(tumor.combined, reduction = "umap", group.by = "celltype",
+        label = TRUE, pt.size = 0.5, cols = celltype_colors)
+#####################################
+FeaturePlot(tumor.combined, features = c("EPCAM", "SOX9", "ACTA2", "PECAM1"), reduction = "umap")
+###################################
+
 
